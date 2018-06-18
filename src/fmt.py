@@ -35,10 +35,11 @@ from collections import defaultdict
 from util import load_config, read_data
 
 import pdb
-
+import sys
 import logging
 import datetime
 import dill
+import argparse
 
 
 class FMT():
@@ -210,7 +211,15 @@ class FMT():
                                        *test_history['corrector'][-1]))
 
 
+def model_arg(args=None):
+    parser = argparse.ArgumentParser()
+    parser.add_argument('-w', '--weight', type=float, nargs=2, help='weights for predictor and corrector')
+    parsed_args = parser.parse_args(args)
+    return [parsed_args.weight]
+
+
 if __name__ == '__main__':
+    weight, = model_arg(sys.argv[1:])
     logging.basicConfig(
         filename=os.path.join(os.path.dirname(os.path.abspath('__file__')), 'logs',
                               'fmt_' + str(datetime.date.today()) + '.txt'), level=logging.INFO
@@ -244,8 +253,6 @@ if __name__ == '__main__':
     corrector_params = [5, 'PReLU', 5, 'PReLU']
     predictor_params = [5, 'PReLU', 5, 'PReLU']
     optimizer_params = [0.025, 1e-6, 0.95, False]
-
-    weight = [1.0, 1.0]
 
     model = FMT(input_shape=X_train.shape[1], num_y_class=len(np.unique(df[response])),
                 num_sensitive_x_class=len(np.unique(df[['y_sensitive']])), filter_output_shape=filter_output_shape,
