@@ -52,7 +52,7 @@ class FMT():
         corrector_layer = self.build_corrector_layer(*corrector_params)
 
         # create the filter model first; keep filter trainable and both predictor and corrector non-trainable
-        input_filter = Input(shape=self.input_shape)
+        input_filter = Input(shape=(self.input_shape,))
         predictor_layer.trainable = False
         corrector_layer.trainable = False
         self.filter = Model(inputs=input_filter, outputs=[predictor_layer(filter_layer(input_filter)),
@@ -175,7 +175,7 @@ if __name__ == '__main__':
 
     weight = [1.0, 1.0]
 
-    model = FMT(input_shape=X_train.shape[0], filter_output_shape=filter_output_shape, filter_params=filter_params,
+    model = FMT(input_shape=X_train.shape[1], filter_output_shape=filter_output_shape, filter_params=filter_params,
                 corrector_params=corrector_params, predictor_params=predictor_params, optimizer_params=optimizer_params,
                 weight=weight)
 
