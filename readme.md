@@ -5,4 +5,4 @@ code
 - https://github.com/algofairness/fairness-comparison
 
 data
-- https://raw.githubusercontent.com/algofairness/fairness-comparison/arxiv/data/preprocessed/adult_categorical-binsensitive.csv
+- https://raw.githubusercontent.com/algofairness/fairness-comparison/master/data/preprocessed/adult_numerical-binsensitive.csv

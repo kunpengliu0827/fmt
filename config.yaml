@@ -1,2 +1,2 @@
 data:
-  adult: data/adult_original.csv
+  adult: data/adult_numerical-binsensitive
