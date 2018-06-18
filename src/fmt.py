@@ -24,12 +24,16 @@ from keras.layers import Dense, Dropout, Activation, BatchNormalization, Input
 from keras.layers.advanced_activations import PReLU
 from keras.optimizers import SGD
 from keras.utils import plot_model
+from keras.utils.generic_utils import Progbar
 
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelBinarizer
+from sklearn.preprocessing import LabelEncoder
+
+from collections import defaultdict
 
 from util import load_config, read_data
+
 import pdb
 
 import logging
@@ -38,11 +42,12 @@ import dill
 
 
 class FMT():
-    def __init__(self, input_shape, filter_output_shape, filter_params, predictor_params,
+    def __init__(self, input_shape, num_y_class, num_sensitive_x_class, filter_output_shape, filter_params,
+                 predictor_params,
                  corrector_params, optimizer_params, weight):
         self.weight = weight
         self.input_shape, self.filter_output_shape = None, None
-        self.n_s_class, self.n_y_class = None, None
+        self.n_y_class, self.num_sensitive_x_class = num_y_class, num_sensitive_x_class
 
         self.input_shape = input_shape
         self.filter_output_shape = filter_output_shape
@@ -75,11 +80,14 @@ class FMT():
         self.filter_optimizer, self.predictor_optimizer, self.corrector_optimizer = [
             SGD(lr=lr, decay=decay, momentum=momentum, nesterov=nesterov) for _ in range(3)]
 
-        self.predictor.compile(optimizer=self.predictor_optimizer, loss='categorical_crossentropy')
-        self.corrector.compile(optimizer=self.corrector_optimizer, loss='categorical_crossentropy')
+        self.predictor.compile(optimizer=self.predictor_optimizer, loss='sparse_categorical_crossentropy',
+                               metrics=['accuracy'])
+        self.corrector.compile(optimizer=self.corrector_optimizer, loss='sparse_categorical_crossentropy',
+                               metrics=['accuracy'])
 
         self.filter.compile(optimizer=self.filter_optimizer,
-                            loss=['categorical_crossentropy', 'categorical_crossentropy'],
+                            loss=['sparse_categorical_crossentropy', 'sparse_categorical_crossentropy'],
+                            metrics=['accuracy'],
                             loss_weights=self.weight)
 
     def build_filter_layer(self, h1, l1, h2, l2):
@@ -115,7 +123,7 @@ class FMT():
         else:
             model.add(Activation(l2))
         model.add(Dropout(0.5))
-        model.add(Dense(1, activation='sigmoid'))
+        model.add(Dense(self.n_y_class, activation='sigmoid'))
         return model
 
     def build_corrector_layer(self, h1, l1, h2, l2):
@@ -133,18 +141,79 @@ class FMT():
         else:
             model.add(Activation(l2))
         model.add(Dropout(0.5))
-        model.add(Dense(1, activation='sigmoid'))
+        model.add(Dense(self.num_sensitive_x_class, activation='sigmoid'))
         return model
 
-    def train(self, nepochs):
-        for epoch in range(nepochs):
-            print('Epoch {0}/{1}'.format(epoch, nepochs))
+    def train(self, num_epochs, batch_size, X_train, X_test, y_train, y_test, x_sensitive_train, x_sensitive_test):
+        train_history = defaultdict(list)
+        test_history = defaultdict(list)
+        for epoch in range(num_epochs):
+
+            print('Epoch {0}/{1}'.format(epoch, num_epochs))
+            logger.info('Epoch {0}/{1}'.format(epoch, num_epochs))
+
+            num_batches = int(X_train.shape[0] / batch_size)
+            progress_bar = Progbar(target=num_batches)
+            epoch_filter_loss, epoch_predictor_loss, epoch_corrector_loss = [], [], []
+
+            for index in range(num_batches):
+                X_train_batch = X_train[index * batch_size:(index + 1) * batch_size]
+                y_train_batch = y_train[index * batch_size:(index + 1) * batch_size]
+                x_sensitive_train_batch = x_sensitive_train[index * batch_size:(index + 1) * batch_size]
+                epoch_predictor_loss.append(self.predictor.train_on_batch(X_train_batch, y_train_batch))
+                epoch_corrector_loss.append(self.corrector.train_on_batch(X_train_batch, x_sensitive_train_batch))
+                epoch_filter_loss.append(
+                    self.filter.train_on_batch(X_train_batch, [y_train_batch, x_sensitive_train_batch]))
+                progress_bar.update(index + 1)
+
+            print('Testing for epoch {}:'.format(epoch))
+            logger.info('Testing for epoch {}:'.format(epoch))
+
+            train_predictor_loss = self.predictor.evaluate(X_train, y_train,
+                                                           verbose=False)  # np.mean(np.array(epoch_predictor_loss), axis=0)
+            train_corrector_loss = self.corrector.evaluate(X_train, x_sensitive_train,
+                                                           verbose=False)  # np.mean(np.array(epoch_predictor_loss), axis=0)
+
+            test_predictor_loss = self.predictor.evaluate(X_test, y_test, verbose=False)
+            test_corrector_loss = self.corrector.evaluate(X_test, x_sensitive_test, verbose=False)
+
+            train_history['predictor'].append(train_predictor_loss)
+            train_history['corrector'].append(train_corrector_loss)
+
+            test_history['predictor'].append(test_predictor_loss)
+            test_history['corrector'].append(test_corrector_loss)
+            # pdb.set_trace()
+            print('{0:<22s} | {1:4s} | {2:15s} '.format(
+                'component', *self.predictor.metrics_names))
+            print('-' * 60)
+            logger.info('{0:<22s} | {1:4s} | {2:15s} '.format(
+                'component', *self.predictor.metrics_names))
+            logger.info('-' * 60)
+
+            ROW_FMT = '{0:<22s} | {1:<4.2f} | {2:<15.4f}'
+            print(ROW_FMT.format('predictor (train)',
+                                 *train_history['predictor'][-1]))
+            print(ROW_FMT.format('predictor (test)',
+                                 *test_history['predictor'][-1]))
+            print(ROW_FMT.format('corrector (train)',
+                                 *train_history['corrector'][-1]))
+            print(ROW_FMT.format('corrector (test)',
+                                 *test_history['corrector'][-1]))
+
+            logger.info(ROW_FMT.format('predictor (train)',
+                                       *train_history['predictor'][-1]))
+            logger.info(ROW_FMT.format('predictor (test)',
+                                       *test_history['predictor'][-1]))
+            logger.info(ROW_FMT.format('corrector (train)',
+                                       *train_history['corrector'][-1]))
+            logger.info(ROW_FMT.format('corrector (test)',
+                                       *test_history['corrector'][-1]))
 
 
 if __name__ == '__main__':
     logging.basicConfig(
         filename=os.path.join(os.path.dirname(os.path.abspath('__file__')), 'logs',
-                              'fmt_' + str(datetime.date.today()) + '.txt')
+                              'fmt_' + str(datetime.date.today()) + '.txt'), level=logging.INFO
     )
     logger = logging.getLogger('fmt')
 
@@ -155,14 +224,17 @@ if __name__ == '__main__':
     sensitive_features = ['race', 'sex', 'race-sex']
     response = ['income-per-year']
     normal_features = [e for e in df.columns if e not in (sensitive_features + response)]
-    df['y_sensitive'] = df['race'].map(str) + '-' + df['sex'].map(str)
+    le = LabelEncoder()
+    df['y_sensitive'] = le.fit_transform(df['race'].map(str) + '-' + df['sex'].map(str))
 
+    df = df.sample(frac=1.0, random_state=42).reset_index(drop=True)
     test_ratio = 0.25
 
     X_train, X_test, y_train, y_test, x_sensitive_train, x_sensitive_test = train_test_split(
-        np.array(df[normal_features]), np.array(df[response]), np.array(df['y_sensitive']), test_size=test_ratio,
+        np.array(df[normal_features]), np.array(df[response]), np.array(df[['y_sensitive']]), test_size=test_ratio,
         random_state=42)
 
+    logger.info("\n" * 5)
     logger.info("{0}: train with data of shape {1}".format(datetime.datetime.now(), X_train.shape))
     logger.info("{0}: test with data of shape {1}".format(datetime.datetime.now(), X_test.shape))
 
@@ -175,7 +247,9 @@ if __name__ == '__main__':
 
     weight = [1.0, 1.0]
 
-    model = FMT(input_shape=X_train.shape[1], filter_output_shape=filter_output_shape, filter_params=filter_params,
+    model = FMT(input_shape=X_train.shape[1], num_y_class=len(np.unique(df[response])),
+                num_sensitive_x_class=len(np.unique(df[['y_sensitive']])), filter_output_shape=filter_output_shape,
+                filter_params=filter_params,
                 corrector_params=corrector_params, predictor_params=predictor_params, optimizer_params=optimizer_params,
                 weight=weight)
 
@@ -183,3 +257,6 @@ if __name__ == '__main__':
         plot_model(eval(m), show_layer_names=True, show_shapes=True, to_file=os.path.join(os.path.dirname(
             os.path.abspath('__file__')
         ), 'output', m + '_plot.png'))
+
+    model.train(num_epochs=20, batch_size=256, X_train=X_train, X_test=X_test, y_train=y_train, y_test=y_test,
+                x_sensitive_train=x_sensitive_train, x_sensitive_test=x_sensitive_test)
