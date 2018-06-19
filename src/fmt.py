@@ -28,7 +28,7 @@ from keras.utils.generic_utils import Progbar
 
 from sklearn.metrics import roc_auc_score
 from sklearn.model_selection import train_test_split
-from sklearn.preprocessing import LabelEncoder
+from sklearn.preprocessing import LabelEncoder, MinMaxScaler
 
 from collections import defaultdict
 
@@ -59,37 +59,42 @@ class FMT():
 
         # create the filter model first; keep filter trainable and both predictor and corrector non-trainable
         input_filter = Input(shape=(self.input_shape,))
-        predictor_layer.trainable = False
-        corrector_layer.trainable = False
+
         self.filter = Model(inputs=input_filter, outputs=[predictor_layer(filter_layer(input_filter)),
                                                           corrector_layer(filter_layer(input_filter))])
-
-        self.filter.summary()
 
         # next create the predictor model; keep filter non-trainable
         filter_layer.trainable, predictor_layer.trainable = False, True
         self.predictor = Model(inputs=input_filter, outputs=predictor_layer(filter_layer(input_filter)))
-        self.predictor.summary()
 
         # next create the corrector model; keep filter non-trainable
         filter_layer.trainable, corrector_layer.trainable = False, True
         self.corrector = Model(inputs=input_filter, outputs=corrector_layer(filter_layer(input_filter)))
-        self.corrector.summary()
 
         lr, decay, momentum, nesterov = optimizer_params
 
         self.filter_optimizer, self.predictor_optimizer, self.corrector_optimizer = [
             SGD(lr=lr, decay=decay, momentum=momentum, nesterov=nesterov) for _ in range(3)]
 
+        filter_layer.trainable = True
+        predictor_layer.trainable = False
+        corrector_layer.trainable = False
+        self.filter.compile(optimizer=self.filter_optimizer,
+                            loss=['sparse_categorical_crossentropy', 'sparse_categorical_crossentropy'],
+                            metrics=['accuracy'],
+                            loss_weights=self.weight)
+
+        filter_layer.trainable = False
+        predictor_layer.trainable = True
+        corrector_layer.trainable = True
         self.predictor.compile(optimizer=self.predictor_optimizer, loss='sparse_categorical_crossentropy',
                                metrics=['accuracy'])
         self.corrector.compile(optimizer=self.corrector_optimizer, loss='sparse_categorical_crossentropy',
                                metrics=['accuracy'])
 
-        self.filter.compile(optimizer=self.filter_optimizer,
-                            loss=['sparse_categorical_crossentropy', 'sparse_categorical_crossentropy'],
-                            metrics=['accuracy'],
-                            loss_weights=self.weight)
+        self.filter.summary()
+        self.predictor.summary()
+        self.corrector.summary()
 
     def build_filter_layer(self, h1, l1, h2, l2):
         model = Sequential()
@@ -163,6 +168,7 @@ class FMT():
                 x_sensitive_train_batch = x_sensitive_train[index * batch_size:(index + 1) * batch_size]
                 epoch_predictor_loss.append(self.predictor.train_on_batch(X_train_batch, y_train_batch))
                 epoch_corrector_loss.append(self.corrector.train_on_batch(X_train_batch, x_sensitive_train_batch))
+
                 epoch_filter_loss.append(
                     self.filter.train_on_batch(X_train_batch, [y_train_batch, x_sensitive_train_batch]))
                 progress_bar.update(index + 1)
@@ -242,6 +248,11 @@ if __name__ == '__main__':
     X_train, X_test, y_train, y_test, x_sensitive_train, x_sensitive_test = train_test_split(
         np.array(df[normal_features]), np.array(df[response]), np.array(df[['y_sensitive']]), test_size=test_ratio,
         random_state=42)
+
+    scaler = MinMaxScaler()
+
+    X_train = scaler.fit_transform(X_train)
+    X_test = scaler.transform(X_test)
 
     logger.info("\n" * 5)
     logger.info("{0}: train with data of shape {1}".format(datetime.datetime.now(), X_train.shape))
