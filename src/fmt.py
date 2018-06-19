@@ -53,6 +53,11 @@ class FMT():
         self.input_shape = input_shape
         self.filter_output_shape = filter_output_shape
 
+        lr, decay, momentum, nesterov = optimizer_params
+
+        self.filter_optimizer, self.predictor_optimizer, self.corrector_optimizer = [
+            SGD(lr=lr, decay=decay, momentum=momentum, nesterov=nesterov) for _ in range(3)]
+
         filter_layer = self.build_filter_layer(*filter_params)
         predictor_layer = self.build_predictor_layer(*predictor_params)
         corrector_layer = self.build_corrector_layer(*corrector_params)
@@ -62,20 +67,6 @@ class FMT():
 
         self.filter = Model(inputs=input_filter, outputs=[predictor_layer(filter_layer(input_filter)),
                                                           corrector_layer(filter_layer(input_filter))])
-
-        # next create the predictor model; keep filter non-trainable
-        filter_layer.trainable, predictor_layer.trainable = False, True
-        self.predictor = Model(inputs=input_filter, outputs=predictor_layer(filter_layer(input_filter)))
-
-        # next create the corrector model; keep filter non-trainable
-        filter_layer.trainable, corrector_layer.trainable = False, True
-        self.corrector = Model(inputs=input_filter, outputs=corrector_layer(filter_layer(input_filter)))
-
-        lr, decay, momentum, nesterov = optimizer_params
-
-        self.filter_optimizer, self.predictor_optimizer, self.corrector_optimizer = [
-            SGD(lr=lr, decay=decay, momentum=momentum, nesterov=nesterov) for _ in range(3)]
-
         filter_layer.trainable = True
         predictor_layer.trainable = False
         corrector_layer.trainable = False
@@ -84,9 +75,17 @@ class FMT():
                             metrics=['accuracy'],
                             loss_weights=self.weight)
 
+        # next create the predictor model; keep filter non-trainable
         filter_layer.trainable = False
         predictor_layer.trainable = True
         corrector_layer.trainable = True
+        filter_layer.trainable, predictor_layer.trainable = False, True
+        self.predictor = Model(inputs=input_filter, outputs=predictor_layer(filter_layer(input_filter)))
+
+        # next create the corrector model; keep filter non-trainable
+        filter_layer.trainable, corrector_layer.trainable = False, True
+        self.corrector = Model(inputs=input_filter, outputs=corrector_layer(filter_layer(input_filter)))
+
         self.predictor.compile(optimizer=self.predictor_optimizer, loss='sparse_categorical_crossentropy',
                                metrics=['accuracy'])
         self.corrector.compile(optimizer=self.corrector_optimizer, loss='sparse_categorical_crossentropy',
