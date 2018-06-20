@@ -58,96 +58,110 @@ class FMT():
         self.filter_optimizer, self.predictor_optimizer, self.corrector_optimizer = [
             SGD(lr=lr, decay=decay, momentum=momentum, nesterov=nesterov) for _ in range(3)]
 
-        filter_layer = self.build_filter_layer(*filter_params)
-        predictor_layer = self.build_predictor_layer(*predictor_params)
-        corrector_layer = self.build_corrector_layer(*corrector_params)
-
-        # create the filter model first; keep filter trainable and both predictor and corrector non-trainable
         input_filter = Input(shape=(self.input_shape,))
 
-        self.filter = Model(inputs=input_filter, outputs=[predictor_layer(filter_layer(input_filter)),
-                                                          corrector_layer(filter_layer(input_filter))])
-        filter_layer.trainable = True
-        predictor_layer.trainable = False
-        corrector_layer.trainable = False
+        filter_layer = self.build_filter_layer(*filter_params)
+        predictor_layer = self.build_predictor_layer(filter_layer, *predictor_params)
+        corrector_layer = self.build_corrector_layer(filter_layer, *corrector_params)
+
+        # create the filter model first; keep filter trainable and both predictor and corrector non-trainable
+
+        self.filter = Model(inputs=filter_layer.input, outputs=[predictor_layer.output,
+                                                                corrector_layer.output])
+        # pdb.set_trace()
+
+        for layer in predictor_layer.layers:
+            if layer.name.startswith('filter'):
+                layer.trainable = True
+            else:
+                layer.trainable = False
+        for layer in corrector_layer.layers:
+            if layer.name.startswith('filter'):
+                layer.trainable = True
+            else:
+                layer.trainable = False
+
         self.filter.compile(optimizer=self.filter_optimizer,
                             loss=['sparse_categorical_crossentropy', 'sparse_categorical_crossentropy'],
                             metrics=['accuracy'],
                             loss_weights=self.weight)
-
         # next create the predictor model; keep filter non-trainable
-        filter_layer.trainable = False
-        predictor_layer.trainable = True
-        corrector_layer.trainable = True
-        filter_layer.trainable, predictor_layer.trainable = False, True
-        self.predictor = Model(inputs=input_filter, outputs=predictor_layer(filter_layer(input_filter)))
-
-        # next create the corrector model; keep filter non-trainable
-        filter_layer.trainable, corrector_layer.trainable = False, True
-        self.corrector = Model(inputs=input_filter, outputs=corrector_layer(filter_layer(input_filter)))
+        self.predictor = Model(inputs=filter_layer.input, outputs=predictor_layer.output)
+        for layer in predictor_layer.layers:
+            if layer.name.startswith('filter'):
+                layer.trainable = False
+            else:
+                layer.trainable = True
 
         self.predictor.compile(optimizer=self.predictor_optimizer, loss='sparse_categorical_crossentropy',
                                metrics=['accuracy'])
+        # next create the corrector model; keep filter non-trainable
+        self.corrector = Model(inputs=filter_layer.input, outputs=corrector_layer.output)
+        for layer in corrector_layer.layers:
+            if layer.name.startswith('filter'):
+                layer.trainable = False
+            else:
+                layer.trainable = True
         self.corrector.compile(optimizer=self.corrector_optimizer, loss='sparse_categorical_crossentropy',
                                metrics=['accuracy'])
 
         self.filter.summary()
         self.predictor.summary()
         self.corrector.summary()
+        pdb.set_trace()
 
     def build_filter_layer(self, h1, l1, h2, l2):
-        model = Sequential()
-        model.add(Dense(h1, input_dim=self.input_shape, kernel_initializer='normal'))
+        name_ = 'filter'
+        inputs = Input(shape=(self.input_shape,), name=name_ + '_0')
+        layer = Dense(h1, kernel_initializer='normal', name=name_ + '_1')(inputs)
         if l1 == 'PReLU':
-            model.add(PReLU())
+            layer = PReLU(name=name_ + '_2')(layer)
         else:
-            model.add(Activation(l1))
-        model.add(BatchNormalization())
-        model.add(Dropout(0.5))
-        model.add(Dense(h2, kernel_initializer='normal'))
+            layer = Activation(l1, name=name_ + '_2')(layer)
+        layer = BatchNormalization(name=name_ + '_3')(layer)
+        layer = Dropout(0.5, name=name_ + '_4')(layer)
+        layer = Dense(h2, kernel_initializer='normal', name=name_ + '_5')(layer)
         if l2 == 'PReLU':
-            model.add(PReLU())
+            layer = PReLU(name=name_ + '_6')(layer)
         else:
-            model.add(Activation(l2))
-        model.add(Dropout(0.5))
-        model.add(Dense(self.filter_output_shape))
-        return model
+            layer = Activation(l1, name_ + '_6')(layer)
+        layer = Dropout(0.5, name=name_ + '_7')(layer)
+        layer = Dense(self.filter_output_shape, kernel_initializer='normal', name=name_ + '_8')(layer)
+        return Model(inputs, layer)
 
-    def build_predictor_layer(self, h1, l1, h2, l2):
-        model = Sequential()
-        model.add(Dense(h1, input_dim=self.filter_output_shape, kernel_initializer='normal'))
+    def build_predictor_layer(self, filter, h1, l1, h2, l2):
+        layer = Dense(h1, kernel_initializer='normal')(filter.output)
         if l1 == 'PReLU':
-            model.add(PReLU())
+            layer = PReLU()(layer)
         else:
-            model.add(Activation(l1))
-        model.add(BatchNormalization())
-        model.add(Dropout(0.5))
-        model.add(Dense(h2, kernel_initializer='normal'))
+            layer = Activation(l1)(layer)
+        layer = BatchNormalization()(layer)
+        layer = Dropout(0.5)(layer)
+        layer = Dense(h2, kernel_initializer='normal')(layer)
         if l2 == 'PReLU':
-            model.add(PReLU())
+            layer = PReLU()(layer)
         else:
-            model.add(Activation(l2))
-        model.add(Dropout(0.5))
-        model.add(Dense(self.n_y_class, activation='sigmoid'))
-        return model
+            layer = Activation(l1)(layer)
+        layer = Dropout(0.5)(layer)
+        layer = Dense(self.n_y_class, kernel_initializer='normal')(layer)
+        return Model(filter.input, layer)
 
-    def build_corrector_layer(self, h1, l1, h2, l2):
-        model = Sequential()
-        model.add(Dense(h1, input_dim=self.filter_output_shape, kernel_initializer='normal'))
+    def build_corrector_layer(self, filter, h1, l1, h2, l2):
+        layer = Dense(h1, kernel_initializer='normal')(filter.output)
         if l1 == 'PReLU':
-            model.add(PReLU())
+            layer = PReLU()(layer)
         else:
-            model.add(Activation(l1))
-        model.add(BatchNormalization())
-        model.add(Dropout(0.5))
-        model.add(Dense(h2, kernel_initializer='normal'))
+            layer = Activation(l1)(layer)
+        layer = BatchNormalization()(layer)
+        layer = Dropout(0.5)(layer)
+        layer = Dense(h2, kernel_initializer='normal')(layer)
         if l2 == 'PReLU':
-            model.add(PReLU())
+            layer = PReLU()(layer)
         else:
-            model.add(Activation(l2))
-        model.add(Dropout(0.5))
-        model.add(Dense(self.num_sensitive_x_class, activation='sigmoid'))
-        return model
+            layer = Activation(l1)(layer)
+        layer = Dropout(0.5)(layer)
+        layer = Dense(self.num_sensitive_x_class, kernel_initializer='normal')(layer)
+        return Model(filter.input, layer)
 
     def train(self, num_epochs, batch_size, X_train, X_test, y_train, y_test, x_sensitive_train, x_sensitive_test):
         train_history = defaultdict(list)
@@ -277,3 +291,24 @@ if __name__ == '__main__':
 
     model.train(num_epochs=20, batch_size=256, X_train=X_train, X_test=X_test, y_train=y_train, y_test=y_test,
                 x_sensitive_train=x_sensitive_train, x_sensitive_test=x_sensitive_test)
+
+x = Input(shape=(32,))
+layer1 = Dense(32)
+layer2 = Dense(32)
+y = layer2(layer1(x))
+model_1 = Model(x, y)
+layer1.trainable = True
+layer2.trainable = False
+model_1.compile(optimizer='rmsprop', loss='mse')
+model_2 = Model(x, y)
+layer1.trainable = False
+layer2.trainable = True
+model_2.compile(optimizer='rmsprop', loss='mse')
+model_3 = Model(x,y)
+layer1.trainable = True
+layer2.trainable = True
+model_3.compile(optimizer='rmsprop', loss='mse')
+
+model_1.summary()
+model_2.summary()
+model_3.summary()
