@@ -108,7 +108,7 @@ class FMT():
         self.filter.summary()
         self.predictor.summary()
         self.corrector.summary()
-        pdb.set_trace()
+        # pdb.set_trace()
 
     def build_filter_layer(self, h1, l1, h2, l2):
         name_ = 'filter'
@@ -179,11 +179,18 @@ class FMT():
                 X_train_batch = X_train[index * batch_size:(index + 1) * batch_size]
                 y_train_batch = y_train[index * batch_size:(index + 1) * batch_size]
                 x_sensitive_train_batch = x_sensitive_train[index * batch_size:(index + 1) * batch_size]
+                pdb.set_trace()
+
                 epoch_predictor_loss.append(self.predictor.train_on_batch(X_train_batch, y_train_batch))
+                pdb.set_trace()
+
                 epoch_corrector_loss.append(self.corrector.train_on_batch(X_train_batch, x_sensitive_train_batch))
+                pdb.set_trace()
 
                 epoch_filter_loss.append(
                     self.filter.train_on_batch(X_train_batch, [y_train_batch, x_sensitive_train_batch]))
+                pdb.set_trace()
+
                 progress_bar.update(index + 1)
 
             print('Testing for epoch {}:'.format(epoch))
@@ -292,26 +299,4 @@ if __name__ == '__main__':
     model.train(num_epochs=20, batch_size=256, X_train=X_train, X_test=X_test, y_train=y_train, y_test=y_test,
                 x_sensitive_train=x_sensitive_train, x_sensitive_test=x_sensitive_test)
 
-x = Input(shape=(32,))
-layer1 = Dense(32)
-layer2 = Dense(32)
-y = layer2(layer1(x))
-model_1 = Model(x, y)
-layer1.trainable = True
-layer2.trainable = False
-model_1.compile(optimizer='rmsprop', loss='mse')
-model_2 = Model(x, y)
-layer1.trainable = False
-layer2.trainable = True
-model_2.compile(optimizer='rmsprop', loss='mse')
-model_3 = Model(x,y)
-layer1.trainable = True
-layer2.trainable = True
-model_3.compile(optimizer='rmsprop', loss='mse')
 
-print("model 1 summary:")
-model_1.summary()
-print("model 2 summary:")
-model_2.summary()
-print("model 3 summary:")
-model_3.summary()

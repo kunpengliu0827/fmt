@@ -64,14 +64,7 @@ class FMT():
         predictor_layer = self.build_predictor_layer(filter_layer, *predictor_params)
         corrector_layer = self.build_corrector_layer(filter_layer, *corrector_params)
 
-        # create the filter model first; keep filter trainable and both predictor and corrector non-trainable
-        self.filter = Model(inputs=input_filter, outputs=[predictor_layer, corrector_layer])
-
-        self.filter.compile(optimizer=self.filter_optimizer,
-                            loss=['sparse_categorical_crossentropy', 'sparse_categorical_crossentropy'],
-                            metrics=['accuracy'],
-                            loss_weights=self.weight)
-        # next create the predictor model; keep filter non-trainable
+        # create the predictor model; keep filter non-trainable
         self.predictor = Model(inputs=input_filter, outputs=predictor_layer)
 
         self.predictor.compile(optimizer=self.predictor_optimizer, loss='sparse_categorical_crossentropy',
@@ -81,10 +74,8 @@ class FMT():
         self.corrector.compile(optimizer=self.corrector_optimizer, loss='sparse_categorical_crossentropy',
                                metrics=['accuracy'])
 
-        self.filter.summary()
         self.predictor.summary()
         self.corrector.summary()
-        # pdb.set_trace()
 
     def build_filter_layer(self, input_layer, h1, l1, h2, l2):
         name_ = 'filter'
@@ -154,9 +145,9 @@ class FMT():
                 X_train_batch = X_train[index * batch_size:(index + 1) * batch_size]
                 y_train_batch = y_train[index * batch_size:(index + 1) * batch_size]
                 x_sensitive_train_batch = x_sensitive_train[index * batch_size:(index + 1) * batch_size]
+                epoch_predictor_loss.append(self.predictor.train_on_batch(X_train_batch, y_train_batch))
+                epoch_corrector_loss.append(self.corrector.train_on_batch(X_train_batch, x_sensitive_train_batch))
 
-                epoch_filter_loss.append(
-                    self.filter.train_on_batch(X_train_batch, [y_train_batch, x_sensitive_train_batch]))
                 progress_bar.update(index + 1)
 
             print('Testing for epoch {}:'.format(epoch))
@@ -257,7 +248,7 @@ if __name__ == '__main__':
                 corrector_params=corrector_params, predictor_params=predictor_params, optimizer_params=optimizer_params,
                 weight=weight)
 
-    for m in ['model' + '.' + e for e in ['filter', 'predictor', 'corrector']]:
+    for m in ['model' + '.' + e for e in ['predictor', 'corrector']]:
         plot_model(eval(m), show_layer_names=True, show_shapes=True, to_file=os.path.join(os.path.dirname(
             os.path.abspath('__file__')
         ), 'output', m + '_plot.png'))
