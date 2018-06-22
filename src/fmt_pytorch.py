@@ -148,6 +148,7 @@ class FMT():
                 self.optimizerPredictor.step()
 
                 # train corrector
+                self.optimizerCorrector.zero_grad()
                 corrector_out = self.netCorrector(filter_out)
                 corrector_loss = self.correctorCriterion(corrector_out, x_sensitive_train_tensor)
                 epoch_corrector_loss.append(corrector_loss.item())
@@ -155,7 +156,7 @@ class FMT():
                 self.optimizerCorrector.step()
 
                 # train filter
-
+                self.optimizerFilter.zero_grad()
                 filter_loss = self.predictorCriterion(predictor_out, y_train_tensor) * self.weight[0] + \
                               self.correctorCriterion(corrector_out, x_sensitive_train_tensor) * self.weight[1]
                 epoch_filter_loss.append(filter_loss.item())
