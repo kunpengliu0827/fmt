@@ -32,3 +32,20 @@ def load_config():
 def read_data(config, which_data):
     dat = pd.read_csv(config['data'][which_data])
     return dat
+
+
+def print_metric(train_y_accuracy, train_y_loss, test_y_accuracy, test_y_loss,
+                 train_x_sensitive_accuracy, train_x_sensitive_loss, test_x_sensitive_accuracy, test_x_sensitive_loss):
+    print('{0:<22s} | {1:6s} | {2:15s} '.format(
+        'component', 'acc', 'cross entropy'))
+    print('-' * 60)
+
+    ROW_FMT = '{0:<22s} | {1:<4.4f} | {2:<15.4f}'
+    print(ROW_FMT.format('predictor (train)',
+                         train_y_accuracy, train_y_loss))
+    print(ROW_FMT.format('predictor (test)',
+                         test_y_accuracy, test_y_loss))
+    print(ROW_FMT.format('corrector (train)',
+                         train_x_sensitive_accuracy, train_x_sensitive_loss))
+    print(ROW_FMT.format('corrector (test)',
+                         test_x_sensitive_accuracy, test_x_sensitive_loss))

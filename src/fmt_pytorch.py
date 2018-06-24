@@ -23,7 +23,7 @@ import logging
 from collections import defaultdict
 
 torch.manual_seed(42)
-from util import load_config, read_data
+from util import load_config, read_data, print_metric
 
 
 class Filter(nn.Module):
@@ -153,8 +153,6 @@ class FMT():
                 corrector_loss.backward()
                 self.optimizerCorrector.step()
 
-                # pdb.set_trace()
-
                 self.optimizerFilter.zero_grad()
                 filter_out = self.netFilter(X_train_tensor)
                 predictor_out = self.netPredictor(filter_out)
@@ -201,7 +199,7 @@ class FMT():
 
             test_corrector_loss = test_corrector_out.max(1)[1]
             test_x_sensitive_accuracy = test_corrector_loss.eq(
-                test_real_x_sensitive.view_as(test_real_x_sensitive)).sum().item() / train_real_x_sensitive.shape[0]
+                test_real_x_sensitive.view_as(test_real_x_sensitive)).sum().item() / test_real_x_sensitive.shape[0]
             test_x_sensitive_loss = F.cross_entropy(test_corrector_out, test_real_x_sensitive).item()
 
             train_history['predictor'].append(train_y_loss)
@@ -210,19 +208,9 @@ class FMT():
             test_history['predictor'].append(train_y_loss)
             test_history['corrector'].append(test_x_sensitive_loss)
             # # pdb.set_trace()
-            print('{0:<22s} | {1:6s} | {2:15s} '.format(
-                'component', 'acc', 'cross entropy'))
-            print('-' * 60)
-
-            ROW_FMT = '{0:<22s} | {1:<4.4f} | {2:<15.4f}'
-            print(ROW_FMT.format('predictor (train)',
-                                 train_y_accuracy, train_y_loss))
-            print(ROW_FMT.format('predictor (test)',
-                                 test_y_accuracy, test_y_loss))
-            print(ROW_FMT.format('corrector (train)',
-                                 train_x_sensitive_accuracy, train_x_sensitive_loss))
-            print(ROW_FMT.format('corrector (test)',
-                                 test_x_sensitive_accuracy, test_x_sensitive_loss))
+            print_metric(train_y_accuracy, train_y_loss, test_y_accuracy, test_y_loss,
+                         train_x_sensitive_accuracy, train_x_sensitive_loss, test_x_sensitive_accuracy,
+                         test_x_sensitive_loss)
 
 
 def print_network(net):
