@@ -24,6 +24,7 @@ from collections import defaultdict
 
 torch.manual_seed(42)
 from util import load_config, read_data, print_metric
+from AlternativeModels import LR
 
 
 class Filter(nn.Module):
@@ -88,7 +89,7 @@ class Corrector(nn.Module):
         return self.main(*input)
 
 
-class FMT():
+class FairnessNet():
     def __init__(self, input_shape, num_y_class, num_sensitive_x_class, filter_output_shape, filter_params,
                  predictor_params,
                  corrector_params, weight):
@@ -103,7 +104,7 @@ class FMT():
         self.predictorCriterion = nn.CrossEntropyLoss()
         self.correctorCriterion = nn.CrossEntropyLoss()
 
-        self.optimizerFilter = optim.SGD(self.netFilter.parameters(), lr=1e-4, momentum=0.9)
+        self.optimizerFilter = optim.SGD(self.netFilter.parameters(), lr=1e-2, momentum=0.9)
         self.optimizerPredictor = optim.SGD(self.netPredictor.parameters(), lr=1e-4, momentum=0.9)
         self.optimizerCorrector = optim.SGD(self.netCorrector.parameters(), lr=1e-4, momentum=0.9)
 
@@ -211,6 +212,7 @@ class FMT():
             print_metric(train_y_accuracy, train_y_loss, test_y_accuracy, test_y_loss,
                          train_x_sensitive_accuracy, train_x_sensitive_loss, test_x_sensitive_accuracy,
                          test_x_sensitive_loss)
+            LR(train_filter_out.detach().numpy(), test_filter_out.detach().numpy(), y_train, y_test, x_sensitive_train, x_sensitive_test)
 
 
 def print_network(net):
@@ -267,12 +269,13 @@ if __name__ == '__main__':
     predictor_params = [10, 10]
     corrector_params = [10, 10]
 
-    model = FMT(input_shape=X_train.shape[1], num_y_class=len(np.unique(df[response])),
-                num_sensitive_x_class=len(np.unique(df[['y_sensitive']])), filter_output_shape=filter_output_shape,
-                filter_params=filter_params,
-                corrector_params=corrector_params, predictor_params=predictor_params,
-                weight=weight)
+    model = FairnessNet(input_shape=X_train.shape[1], num_y_class=len(np.unique(df[response])),
+                        num_sensitive_x_class=len(np.unique(df[['y_sensitive']])),
+                        filter_output_shape=filter_output_shape,
+                        filter_params=filter_params,
+                        corrector_params=corrector_params, predictor_params=predictor_params,
+                        weight=weight)
 
-    model.train(num_epochs=20, batch_size=256, X_train=X_train, X_test=X_test, y_train=y_train.ravel(),
+    model.train(num_epochs=50, batch_size=256, X_train=X_train, X_test=X_test, y_train=y_train.ravel(),
                 y_test=y_test.ravel(),
                 x_sensitive_train=x_sensitive_train.ravel(), x_sensitive_test=x_sensitive_test.ravel())
