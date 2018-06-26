@@ -137,33 +137,39 @@ class FairnessNet():
                                                     requires_grad=False)
 
                 # pdb.set_trace()
-                filter_out = self.netFilter(X_train_tensor)
-                predictor_out = self.netPredictor(filter_out)
-                predictor_loss = self.predictorCriterion(predictor_out, y_train_tensor)
-                epoch_predictor_loss.append(predictor_loss.item())
-                self.optimizerPredictor.zero_grad()
-                predictor_loss.backward()
-                self.optimizerPredictor.step()
+                if np.random.uniform() > 0.5:
+                    filter_out = self.netFilter(X_train_tensor)
+                    predictor_out = self.netPredictor(filter_out)
+                    predictor_loss = self.predictorCriterion(predictor_out, y_train_tensor)
+                    epoch_predictor_loss.append(predictor_loss.item())
+                    self.optimizerPredictor.zero_grad()
+                    predictor_loss.backward()
+                    self.optimizerPredictor.step()
 
-                # train corrector
-                filter_out = self.netFilter(X_train_tensor)
-                corrector_out = self.netCorrector(filter_out)
-                corrector_loss = self.correctorCriterion(corrector_out, x_sensitive_train_tensor)
-                epoch_corrector_loss.append(corrector_loss.item())
-                self.optimizerCorrector.zero_grad()
-                corrector_loss.backward()
-                self.optimizerCorrector.step()
-
-                self.optimizerFilter.zero_grad()
-                filter_out = self.netFilter(X_train_tensor)
-                predictor_out = self.netPredictor(filter_out)
-                corrector_out = self.netCorrector(filter_out)
-                filter_loss = self.predictorCriterion(predictor_out, y_train_tensor) * self.weight[0] + \
-                              self.correctorCriterion(corrector_out, x_sensitive_train_tensor) * self.weight[1]
-                epoch_filter_loss.append(filter_loss.item())
-                filter_loss.backward()
-                self.optimizerFilter.step()
-                # pdb.set_trace()
+                    # train corrector
+                    filter_out = self.netFilter(X_train_tensor)
+                    corrector_out = self.netCorrector(filter_out)
+                    corrector_loss = self.correctorCriterion(corrector_out, x_sensitive_train_tensor)
+                    epoch_corrector_loss.append(corrector_loss.item())
+                    self.optimizerCorrector.zero_grad()
+                    corrector_loss.backward()
+                    self.optimizerCorrector.step()
+                else:
+                    self.optimizerFilter.zero_grad()
+                    filter_out = self.netFilter(X_train_tensor)
+                    predictor_out = self.netPredictor(filter_out)
+                    corrector_out = self.netCorrector(filter_out)
+                    zeros_ = torch.zeros_like(x_sensitive_train_tensor)
+                    ones_ = torch.zeros_like(x_sensitive_train_tensor)
+                    filter_loss = self.predictorCriterion(predictor_out, y_train_tensor) * self.weight[0] + \
+                                  (self.correctorCriterion(corrector_out, zeros_) +
+                                   self.correctorCriterion(corrector_out, ones_) +
+                                   self.correctorCriterion(corrector_out, ones_) * 2 +
+                                   self.correctorCriterion(corrector_out, ones_) * 3) * 0.25 * self.weight[1]
+                    epoch_filter_loss.append(filter_loss.item())
+                    filter_loss.backward()
+                    self.optimizerFilter.step()
+                    # pdb.set_trace()
 
             print('Testing for epoch {}:'.format(epoch))
             logger.info('Testing for epoch {}:'.format(epoch))
@@ -183,7 +189,6 @@ class FairnessNet():
                                              requires_grad=False)
 
             train_predictor_loss = train_predictor_out.max(1)[1]
-            # pdb.set_trace()
             train_y_accuracy = train_predictor_loss.eq(train_real_y.view_as(train_real_y)).sum().item() / \
                                train_real_y.shape[0]
             train_y_loss = F.cross_entropy(train_predictor_out, train_real_y).item()
@@ -197,7 +202,7 @@ class FairnessNet():
             train_x_sensitive_accuracy = train_corrector_loss.eq(
                 train_real_x_sensitive.view_as(train_real_x_sensitive)).sum().item() / train_real_x_sensitive.shape[0]
             train_x_sensitive_loss = F.cross_entropy(train_corrector_out, train_real_x_sensitive).item()
-
+            # pdb.set_trace()
             test_corrector_loss = test_corrector_out.max(1)[1]
             test_x_sensitive_accuracy = test_corrector_loss.eq(
                 test_real_x_sensitive.view_as(test_real_x_sensitive)).sum().item() / test_real_x_sensitive.shape[0]
@@ -208,11 +213,12 @@ class FairnessNet():
 
             test_history['predictor'].append(train_y_loss)
             test_history['corrector'].append(test_x_sensitive_loss)
-            # # pdb.set_trace()
+            # pdb.set_trace()
             print_metric(train_y_accuracy, train_y_loss, test_y_accuracy, test_y_loss,
                          train_x_sensitive_accuracy, train_x_sensitive_loss, test_x_sensitive_accuracy,
                          test_x_sensitive_loss)
-            LR(train_filter_out.detach().numpy(), test_filter_out.detach().numpy(), y_train, y_test, x_sensitive_train, x_sensitive_test)
+            LR(train_filter_out.detach().numpy(), test_filter_out.detach().numpy(), y_train, y_test, x_sensitive_train,
+               x_sensitive_test)
 
 
 def print_network(net):
@@ -279,3 +285,5 @@ if __name__ == '__main__':
     model.train(num_epochs=50, batch_size=256, X_train=X_train, X_test=X_test, y_train=y_train.ravel(),
                 y_test=y_test.ravel(),
                 x_sensitive_train=x_sensitive_train.ravel(), x_sensitive_test=x_sensitive_test.ravel())
+    print("-" * 10 + "no filtering" + "-" * 10)
+    LR(X_train, X_test, y_train.ravel(), y_test.ravel(), x_sensitive_train.ravel(), x_sensitive_test.ravel())
