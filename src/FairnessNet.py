@@ -106,7 +106,7 @@ class FairnessNet():
 
         self.optimizerFilter = optim.SGD(self.netFilter.parameters(), lr=1e-2, momentum=0.9)
         self.optimizerPredictor = optim.SGD(self.netPredictor.parameters(), lr=1e-4, momentum=0.9)
-        self.optimizerCorrector = optim.SGD(self.netCorrector.parameters(), lr=1e-4, momentum=0.9)
+        self.optimizerCorrector = optim.SGD(self.netCorrector.parameters(), lr=1e-3, momentum=0.9)
 
         print('---------- Networks architecture -------------')
         print_network(self.netFilter)
@@ -164,8 +164,8 @@ class FairnessNet():
                     filter_loss = self.predictorCriterion(predictor_out, y_train_tensor) * self.weight[0] + \
                                   (self.correctorCriterion(corrector_out, zeros_) +
                                    self.correctorCriterion(corrector_out, ones_) +
-                                   self.correctorCriterion(corrector_out, ones_) * 2 +
-                                   self.correctorCriterion(corrector_out, ones_) * 3) * 0.25 * self.weight[1]
+                                   self.correctorCriterion(corrector_out, ones_ * 2) +
+                                   self.correctorCriterion(corrector_out, ones_ * 3)) * 0.25 * self.weight[1]
                     epoch_filter_loss.append(filter_loss.item())
                     filter_loss.backward()
                     self.optimizerFilter.step()
@@ -211,7 +211,7 @@ class FairnessNet():
             train_history['predictor'].append(train_y_loss)
             train_history['corrector'].append(train_x_sensitive_loss)
 
-            test_history['predictor'].append(train_y_loss)
+            test_history['predictor'].append(test_y_loss)
             test_history['corrector'].append(test_x_sensitive_loss)
             # pdb.set_trace()
             print_metric(train_y_accuracy, train_y_loss, test_y_accuracy, test_y_loss,
