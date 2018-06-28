@@ -104,9 +104,9 @@ class FairnessNet():
         self.predictorCriterion = nn.CrossEntropyLoss()
         self.correctorCriterion = nn.CrossEntropyLoss()
 
-        self.optimizerFilter = optim.SGD(self.netFilter.parameters(), lr=1e-4, momentum=0.95)
-        self.optimizerPredictor = optim.SGD(self.netPredictor.parameters(), lr=1e-4, momentum=0.95)
-        self.optimizerCorrector = optim.SGD(self.netCorrector.parameters(), lr=1e-4, momentum=0.95)
+        self.optimizerFilter = optim.Adam(self.netFilter.parameters(), lr=1e-3)
+        self.optimizerPredictor = optim.Adam(self.netPredictor.parameters(), lr=1e-4)
+        self.optimizerCorrector = optim.Adam(self.netCorrector.parameters(), lr=1e-4)
 
         print('---------- Networks architecture -------------')
         print_network(self.netFilter)
@@ -161,13 +161,13 @@ class FairnessNet():
                     corrector_out = self.netCorrector(filter_out)
                     zeros_ = torch.zeros_like(x_sensitive_train_tensor)
                     ones_ = torch.ones_like(x_sensitive_train_tensor)
-                    # filter_loss = self.predictorCriterion(predictor_out, y_train_tensor) * self.weight[0] + \
-                    #               (self.correctorCriterion(corrector_out, zeros_) +
-                    #                self.correctorCriterion(corrector_out, ones_) +
-                    #                self.correctorCriterion(corrector_out, ones_ * 2) +
-                    #                self.correctorCriterion(corrector_out, ones_ * 3)) * 0.25 * self.weight[1]
                     filter_loss = self.predictorCriterion(predictor_out, y_train_tensor) * self.weight[0] + \
-                                  self.correctorCriterion(corrector_out, x_sensitive_train_tensor) * self.weight[1]
+                                  (self.correctorCriterion(corrector_out, zeros_) +
+                                   self.correctorCriterion(corrector_out, ones_) +
+                                   self.correctorCriterion(corrector_out, ones_ * 2) +
+                                   self.correctorCriterion(corrector_out, ones_ * 3)) * 0.25 * self.weight[1]
+                    # filter_loss = self.predictorCriterion(predictor_out, y_train_tensor) * self.weight[0] + \
+                    #               self.correctorCriterion(corrector_out, x_sensitive_train_tensor) * self.weight[1]
                     epoch_filter_loss.append(filter_loss.item())
                     filter_loss.backward()
                     self.optimizerFilter.step()
