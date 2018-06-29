@@ -183,13 +183,9 @@ class FairnessNet():
                     filter_out = self.netFilter(X_train_tensor)
                     predictor_out = self.netPredictor(filter_out)
                     corrector_out = self.netCorrector(filter_out)
-                    ones_ = torch.ones(batch_size).long()
                     if epoch > -1:
                         filter_loss = self.predictorCriterion(predictor_out, y_train_tensor) * self.weight[0] + \
-                                      (self.correctorCriterion(corrector_out, ones_ * 0) +
-                                       self.correctorCriterion(corrector_out, ones_ * 1) +
-                                       self.correctorCriterion(corrector_out, ones_ * 2) +
-                                       self.correctorCriterion(corrector_out, ones_ * 3)) * 0.25 * self.weight[1]
+                                      -0.25 * torch.log(corrector_out).sum() / batch_size * self.weight[1]
 
                     else:
                         filter_loss = self.predictorCriterion(predictor_out, y_train_tensor) * self.weight[0] + \
@@ -316,3 +312,18 @@ if __name__ == '__main__':
                 x_sensitive_train=x_sensitive_train.ravel(), x_sensitive_test=x_sensitive_test.ravel())
     print("-" * 10 + "no filtering" + "-" * 10)
     LR(X_train, X_test, y_train.ravel(), y_test.ravel(), x_sensitive_train.ravel(), x_sensitive_test.ravel())
+
+
+def test(pred):
+    ones_ = torch.ones(pred.shape[0]).long()
+    nll = nn.NLLLoss()
+    loss = (nll(pred, ones_ * 0) +
+            nll(pred, ones_ * 1) +
+            nll(pred, ones_ * 2) +
+            nll(pred, ones_ * 3)) * 0.25
+    return loss
+
+
+def createPred(n):
+    p = np.random.rand(n, 4)
+    return torch.from_numpy(p / p.sum(axis=1)[:, None])
