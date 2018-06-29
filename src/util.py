@@ -4,6 +4,13 @@ import numpy as np
 import pandas as pd
 import yaml
 import os
+import torch.nn as nn
+import torch
+
+
+def cross_entropy(pred, soft_targets):
+    logsoftmax = nn.LogSoftmax()
+    return torch.mean(torch.sum(- soft_targets * logsoftmax(pred), 1))
 
 
 class AUCHistory(Callback):

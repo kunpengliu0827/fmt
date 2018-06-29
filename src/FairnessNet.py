@@ -23,8 +23,28 @@ import logging
 from collections import defaultdict
 
 torch.manual_seed(42)
-from util import load_config, read_data, print_metric
+from util import load_config, read_data, print_metric, cross_entropy
 from AlternativeModels import LR
+
+
+class Filter_2(nn.Module):
+    def __init__(self, D_in, D_out, h1, h2):
+        super().__init__()
+        self.main = nn.Sequential(
+            nn.Linear(D_in, h1),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.BatchNorm1d(h1),
+            nn.Dropout(0.5),
+            nn.Linear(h1, h2),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.BatchNorm1d(h2),
+            nn.Dropout(0.5),
+            nn.Linear(h2, D_out),
+            nn.LeakyReLU(0.2, inplace=True)
+        )
+
+    def forward(self, *input):
+        return self.main(*input)
 
 
 class Filter(nn.Module):
@@ -32,15 +52,21 @@ class Filter(nn.Module):
         super().__init__()
         self.main = nn.Sequential(
             nn.Linear(D_in, h1),
-            nn.PReLU(),
+            nn.LeakyReLU(0.2, inplace=True),
             nn.BatchNorm1d(h1),
-            nn.Dropout(0.5),
+            # nn.Dropout(0.5),
             nn.Linear(h1, h2),
-            nn.PReLU(),
-            nn.BatchNorm1d(h2),
-            nn.Dropout(0.5),
-            nn.Linear(h2, D_out),
-            nn.PReLU(),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Linear(h2, h2),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Linear(h2, 200),
+            nn.LeakyReLU(0.2, inplace=True),
+            nn.Linear(200, 1000),
+            nn.LeakyReLU(0.2, inplace=True),
+            # nn.BatchNorm1d(h2),
+            # nn.Dropout(0.5),
+            nn.Linear(1000, D_out),
+            nn.LeakyReLU(0.2, inplace=True)
         )
 
     def forward(self, *input):
@@ -53,19 +79,18 @@ class Predictor(nn.Module):
         self.fc1 = nn.Linear(D_in, h1)
         self.main = nn.Sequential(
             nn.Linear(D_in, h1),
-            nn.PReLU(),
+            nn.LeakyReLU(0.2, inplace=True),
             nn.BatchNorm1d(h1),
             nn.Dropout(0.5),
             nn.Linear(h1, h2),
-            nn.PReLU(),
+            nn.LeakyReLU(0.2, inplace=True),
             nn.BatchNorm1d(h2),
             nn.Dropout(0.5),
             nn.Linear(h2, n_class),
-            nn.Sigmoid()
         )
 
     def forward(self, *input):
-        return self.main(*input)
+        return F.log_softmax(self.main(*input), dim=1)
 
 
 class Corrector(nn.Module):
@@ -74,19 +99,18 @@ class Corrector(nn.Module):
         self.fc1 = nn.Linear(D_in, h1)
         self.main = nn.Sequential(
             nn.Linear(D_in, h1),
-            nn.PReLU(),
+            nn.LeakyReLU(0.2, inplace=True),
             nn.BatchNorm1d(h1),
             nn.Dropout(0.5),
             nn.Linear(h1, h2),
-            nn.PReLU(),
+            nn.LeakyReLU(0.2, inplace=True),
             nn.BatchNorm1d(h2),
             nn.Dropout(0.5),
-            nn.Linear(h2, n_class),
-            nn.Sigmoid()
+            nn.Linear(h2, n_class)
         )
 
     def forward(self, *input):
-        return self.main(*input)
+        return F.log_softmax(self.main(*input), dim=1)
 
 
 class FairnessNet():
@@ -101,8 +125,8 @@ class FairnessNet():
 
         self.netCorrector = Corrector(filter_output_shape, num_sensitive_x_class, *corrector_params)
 
-        self.predictorCriterion = nn.CrossEntropyLoss()
-        self.correctorCriterion = nn.CrossEntropyLoss()
+        self.predictorCriterion = nn.NLLLoss()
+        self.correctorCriterion = nn.NLLLoss()
 
         self.optimizerFilter = optim.Adam(self.netFilter.parameters(), lr=1e-3)
         self.optimizerPredictor = optim.Adam(self.netPredictor.parameters(), lr=1e-4)
@@ -159,17 +183,17 @@ class FairnessNet():
                     filter_out = self.netFilter(X_train_tensor)
                     predictor_out = self.netPredictor(filter_out)
                     corrector_out = self.netCorrector(filter_out)
-                    zeros_ = torch.zeros_like(x_sensitive_train_tensor)
-                    ones_ = torch.ones_like(x_sensitive_train_tensor)
+                    ones_ = torch.ones(batch_size).long()
                     if epoch > -1:
                         filter_loss = self.predictorCriterion(predictor_out, y_train_tensor) * self.weight[0] + \
-                                  (self.correctorCriterion(corrector_out, zeros_) +
-                                   self.correctorCriterion(corrector_out, ones_) +
-                                   self.correctorCriterion(corrector_out, ones_ * 2) +
-                                   self.correctorCriterion(corrector_out, ones_ * 3)) * 0.25 * self.weight[1]
+                                      (self.correctorCriterion(corrector_out, ones_ * 0) +
+                                       self.correctorCriterion(corrector_out, ones_ * 1) +
+                                       self.correctorCriterion(corrector_out, ones_ * 2) +
+                                       self.correctorCriterion(corrector_out, ones_ * 3)) * 0.25 * self.weight[1]
+
                     else:
                         filter_loss = self.predictorCriterion(predictor_out, y_train_tensor) * self.weight[0] + \
-                                  self.correctorCriterion(corrector_out, x_sensitive_train_tensor) * self.weight[1]
+                                      self.correctorCriterion(corrector_out, x_sensitive_train_tensor) * self.weight[1]
                     epoch_filter_loss.append(filter_loss.item())
                     filter_loss.backward()
                     self.optimizerFilter.step()
