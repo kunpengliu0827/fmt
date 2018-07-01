@@ -50,6 +50,10 @@ class Filter_2(nn.Module):
 class Filter(nn.Module):
     def __init__(self, D_in, D_out, h1, h2):
         super().__init__()
+        zero_layer = nn.Linear(h2, h2)
+        # zero_layer.weight = torch.nn.Parameter(torch.zeros(h2, h2))
+        # zero_layer.bias = torch.nn.Parameter(torch.ones(h2))
+
         self.main = nn.Sequential(
             nn.Linear(D_in, h1),
             nn.LeakyReLU(0.2, inplace=True),
@@ -57,7 +61,7 @@ class Filter(nn.Module):
             # nn.Dropout(0.5),
             nn.Linear(h1, h2),
             nn.LeakyReLU(0.2, inplace=True),
-            nn.Linear(h2, h2),
+            zero_layer,
             nn.LeakyReLU(0.2, inplace=True),
             nn.Linear(h2, 200),
             nn.LeakyReLU(0.2, inplace=True),
@@ -130,7 +134,7 @@ class FairnessNet():
 
         self.optimizerFilter = optim.Adam(self.netFilter.parameters(), lr=1e-3)
         self.optimizerPredictor = optim.Adam(self.netPredictor.parameters(), lr=1e-4)
-        self.optimizerCorrector = optim.Adam(self.netCorrector.parameters(), lr=1e-4)
+        self.optimizerCorrector = optim.Adam(self.netCorrector.parameters(), lr=1e-3)
 
         print('---------- Networks architecture -------------')
         print_network(self.netFilter)
@@ -161,7 +165,7 @@ class FairnessNet():
                                                     requires_grad=False)
 
                 # pdb.set_trace()
-                if np.random.uniform() > 0.5:
+                if np.random.uniform() > 1.0:
                     filter_out = self.netFilter(X_train_tensor)
                     predictor_out = self.netPredictor(filter_out)
                     predictor_loss = self.predictorCriterion(predictor_out, y_train_tensor)
@@ -178,14 +182,16 @@ class FairnessNet():
                     self.optimizerCorrector.zero_grad()
                     corrector_loss.backward()
                     self.optimizerCorrector.step()
-                else:
+                if 1:
                     self.optimizerFilter.zero_grad()
                     filter_out = self.netFilter(X_train_tensor)
                     predictor_out = self.netPredictor(filter_out)
                     corrector_out = self.netCorrector(filter_out)
+                    # pdb.set_trace()
                     if epoch > -1:
                         filter_loss = self.predictorCriterion(predictor_out, y_train_tensor) * self.weight[0] + \
-                                      -0.25 * torch.log(corrector_out).sum() / batch_size * self.weight[1]
+                                      -0.25 * corrector_out.sum() / batch_size * self.weight[1]
+                        print("filter_loss: {}".format(filter_loss))
 
                     else:
                         filter_loss = self.predictorCriterion(predictor_out, y_train_tensor) * self.weight[0] + \
@@ -313,17 +319,33 @@ if __name__ == '__main__':
     print("-" * 10 + "no filtering" + "-" * 10)
     LR(X_train, X_test, y_train.ravel(), y_test.ravel(), x_sensitive_train.ravel(), x_sensitive_test.ravel())
 
-
-def test(pred):
-    ones_ = torch.ones(pred.shape[0]).long()
-    nll = nn.NLLLoss()
-    loss = (nll(pred, ones_ * 0) +
-            nll(pred, ones_ * 1) +
-            nll(pred, ones_ * 2) +
-            nll(pred, ones_ * 3)) * 0.25
-    return loss
-
-
-def createPred(n):
-    p = np.random.rand(n, 4)
-    return torch.from_numpy(p / p.sum(axis=1)[:, None])
+#
+# def test(pred):
+#     ones_ = torch.ones(pred.shape[0]).long()
+#     nll = nn.NLLLoss()
+#     loss = (nll(pred, ones_ * 0) +
+#             nll(pred, ones_ * 1) +
+#             nll(pred, ones_ * 2) +
+#             nll(pred, ones_ * 3)) * 0.25
+#     return loss
+#
+#
+# def createPred(n):
+#     p = np.random.rand(n, 4)
+#     return torch.from_numpy(p / p.sum(axis=1)[:, None])
+#
+# class A():
+#    def __init__(self, data=''):
+#        self.data = data
+#
+#    def __str__(self):
+#        return str(self.data)
+#
+# def mid1(a, b):
+#     return a+int((b-a)/2)
+#
+# def mid2(a,b):
+#     return int((a+b)/2)
+#
+# def mid3(a,b):
+#     return b-int((b-a)/2)
